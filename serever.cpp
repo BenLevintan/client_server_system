@@ -12,89 +12,125 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <queue>
 #include "std_lib_facilities.h"
 
-void loadCSV(String filename){
+using namespace std;
 
-}
-
-/* template for the final signiture of the main function
-
-int main(int argc, char* argv[]){
-
-    string input_file = argv[1];
-    int port = argv[2];
-
-}
-
-
-*/
-
-
-int main(){
-
-    ifstream ofs("db.csv");
-    
-    // if there is an error in opening the file, display error message in the terminal
-    if(!ofs) cout << "ERROR: file did not open" << '\n';
-
-
-    vector<vector<int>> adjacencyList; // Adjacency list representation of the graph
-    unordered_map<int, int> nodeIndexMap; // Map to store node value to index mapping
-    
+// Function to read the CSV file and populate the graph
+void readCSV(const string& filename, unordered_map<int, vector<int>>& graph) {
+    ifstream file(filename);
     string line;
 
-    // Parse the file and build the adjacency list
-    while (getline(ofs, line)) {        
-        istringstream iss(line); // Create a string stream from the line
-        int source, destination;
-        if (iss >> source >> destination) { // Extract source and destination from the line
-            // Check if source and destination nodes already exist in the map
-            if (nodeIndexMap.find(source) == nodeIndexMap.end()) {
-                // If not, add them to the map and the adjacency list
-                nodeIndexMap[source] = adjacencyList.size();
-                adjacencyList.push_back({});
-            }
-            if (nodeIndexMap.find(destination) == nodeIndexMap.end()) {
-                nodeIndexMap[destination] = adjacencyList.size();
-                adjacencyList.push_back({});
-            }
-            // Add the edge to the adjacency list
-            adjacencyList[nodeIndexMap[source]].push_back(nodeIndexMap[destination]);
-            adjacencyList[nodeIndexMap[destination]].push_back(nodeIndexMap[source]); // If the graph is undirected
+    while (getline(file, line)) {
+        stringstream ss(line);
+        int node1, node2;
+        ss >> node1 >> node2;
+
+        // Skip edges from a node to itself
+        if (node1 != node2) {
+            // Add edge from node1 to node2
+            graph[node1].push_back(node2);
+            // Add edge from node2 to node1 (since it's an undirected graph)
+            graph[node2].push_back(node1);
         }
     }
+}
 
-    // Display the adjacency list for testing
-    cout << "Adjacency List:\n";
-    for (int i = 0; i < adjacencyList.size(); ++i) {
-        cout << "Node " << i << " -> ";
-        for (int neighbor : adjacencyList[i]) {
+// Function to print the graph
+void printGraph(const unordered_map<int, vector<int>>& graph) {
+    for (const auto& pair : graph) {
+        cout << "Node " << pair.first << " -> ";
+        for (int neighbor : pair.second) {
             cout << neighbor << " ";
         }
         cout << endl;
     }
+}
 
-    int source;
-    int destination;
+// Function to write the adjacency list to a file
+void writeAdjacencyListToFile(const unordered_map<int, vector<int>>& adjacencyList) {
+    ofstream outputFile("adjacency_list2.txt");
+    if (!outputFile) {
+        cout << "ERROR: Unable to create/open file for writing" << endl;
+        return;
+    }
 
-    /*creating a socket*/
+    outputFile << "Adjacency List beta:\n";
+    for (const auto& pair : adjacencyList) {
+        outputFile << "Node " << pair.first << " -> ";
+        for (int neighbor : pair.second) {
+            outputFile << neighbor << " ";
+        }
+        outputFile << endl;
+    }
 
-    
+    outputFile.close();
+    cout << "Adjacency list written to adjacency_list.txt" << endl;
+}
 
-    int server_fd = socket(AF_INET, SOCK_STREAM , 0);
+// Function to perform BFS and find the shortest path between two nodes
+vector<int> bfsShortestPath(const unordered_map<int, vector<int>>& graph, int startNode, int endNode) {
+    queue<int> q;
+    vector<bool> visited(graph.size(), false);
+    vector<int> parent(graph.size(), -1);
 
-    if (server_fd < 0) ("ERROR opening socket");
+    q.push(startNode);
+    visited[startNode] = true;
 
-    sockaddr_in addr = {0};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(4444);
-    bind(server_fd, (sockaddr*)&addr, sizeof(addr));
+    while (!q.empty()) {
+        int currentNode = q.front();
+        q.pop();
 
-    
+        if (currentNode == endNode) {
+            // Reconstruct the path
+            vector<int> path;
+            int node = endNode;
+            while (node != startNode) {
+                path.push_back(node);
+                node = parent[node];
+            }
+            path.push_back(startNode);
+            reverse(path.begin(), path.end());
+            return path;
+        }
 
-    close(server_fd);
-    
+        for (int neighbor : graph.at(currentNode)) {
+            if (!visited[neighbor]) {
+                q.push(neighbor);
+                visited[neighbor] = true;
+                parent[neighbor] = currentNode;
+            }
+        }
+    }
+
+    // If no path found
+    return {};
+}
+
+int main() {
+    string filename = "db.csv";
+    unordered_map<int, vector<int>> graph;
+
+    readCSV(filename, graph);
+    printGraph(graph);
+    writeAdjacencyListToFile(graph);
+
+
+    int startNode = 0;
+    int endNode = 19382;
+
+    vector<int> shortestPath = bfsShortestPath(graph, startNode, endNode);
+
+    if (shortestPath.empty()) {
+        cout << "No path found between nodes " << startNode << " and " << endNode << endl;
+    } else {
+        cout << "Shortest path between nodes " << startNode << " and " << endNode << " is: ";
+        for (int node : shortestPath) {
+            cout << node << " ";
+        }
+        cout << endl;
+    }
+
     return 0;
 }
