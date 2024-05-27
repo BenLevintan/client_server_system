@@ -133,10 +133,7 @@ int main(int argc, char* argv[]){
         sockaddr_in client_addr = {0};
         socklen_t client_len = sizeof(client_addr);
         int client_sockfd = accept(fd, (sockaddr*)&client_addr, &client_len);
-        if (client_sockfd < 0) {
-            cerr << "Error accepting client connection" << endl;
-            continue;
-        }
+
 
         // Receiving data from client
         char buffer[256];
@@ -168,7 +165,7 @@ int main(int argc, char* argv[]){
                 for (int node : cachedResult) {
                     output += to_string(node) + " ";
                 }
-            //    output += "88888 "; // Add 88888 to the output if the result was pulled from the cache
+                output += "88888 "; // Add 88888 to the output if the result was pulled from the cache
                 break;
             }
         }
