@@ -1,3 +1,7 @@
+//Or Avital 207779802
+//Omri Buhbut 209379536
+//Ben Levintan 318181831
+
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -8,9 +12,22 @@
 #include <unistd.h>
 #include <queue>
 #include <pthread.h>
+#include <mutex>
 #include "std_lib_facilities.h"
 
 using namespace std;
+
+
+// setting global variables for caching searches 
+queue<pair<int, int>> lastRequests;
+queue<vector<int>> lastResults;
+mutex mtx; 
+
+//struct to be able to fit the nessecary arguments into pthread_create
+struct Threadinfo {
+    int client_sockfd;
+    const map<int, vector<int>>& graph;
+};
 
 // Function to read the CSV file and populate the graph
 void readCSV(const string& filename, map<int, vector<int>>& graph) {
@@ -28,39 +45,7 @@ void readCSV(const string& filename, map<int, vector<int>>& graph) {
             graph[node2].push_back(node1);
         }
     }
-}
-
-// Function to print the graph
-void printGraph(const map<int, vector<int>>& graph) {
-    for (const auto& pair : graph) {
-        cout << "Node " << pair.first << " -> ";
-        for (int neighbor : pair.second) {
-            cout << neighbor << " ";
-        }
-        cout << endl;
-    }
-}
-
-
-// Function to write the adjacency list to a file
-void writeAdjacencyListToFile(const map<int, vector<int>>& adjacencyList) {
-    ofstream outputFile("adjacency_list.txt");
-    if (!outputFile) {
-        cout << "ERROR: Unable to create/open file for writing" << endl;
-        return;
-    }
-
-    outputFile << "Adjacency List:\n";
-    for (const auto& pair : adjacencyList) {
-        outputFile << "Node " << pair.first << " -> ";
-        for (int neighbor : pair.second) {
-            outputFile << neighbor << " ";
-        }
-        outputFile << endl;
-    }
-
-    outputFile.close();
-    cout << "data loaded" << endl;
+    cout << "data loaded, server is ready." << endl;
 }
 
 // Function to perform BFS and find the shortest path between two nodes
@@ -98,6 +83,81 @@ vector<int> bfsShortestPath(const map<int, vector<int>>& graph, int startNode, i
     return {};
 }
 
+//function that is called each time a new thread is created
+void* handleClient(void* arg){
+    //recievs info from the threadinfo struct
+    Threadinfo* info = static_cast<Threadinfo*>(arg);
+    int client_sockfd = info->client_sockfd;
+    const map<int, vector<int>>& graph = info->graph;
+    delete info;
+
+    char buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+    int bytes_received = read(client_sockfd, buffer, sizeof(buffer));
+
+    // converts the payload to a string, finds the comma and extracts the source and destination nodes
+    string payload(buffer);
+    size_t comma_pos = payload.find(',');
+    int source = stoi(payload.substr(0, comma_pos));
+    int destination = stoi(payload.substr(comma_pos + 1));
+
+    //variables that store the shortest path
+    vector<int> shortestPath;
+    bool foundInCache = false;
+    string output;
+
+    // Lock the mutex
+    mtx.lock();     
+
+    // Check if the request is in the cache
+    queue<pair<int, int>> tempRequests = lastRequests;
+    queue<vector<int>> tempResults = lastResults;
+    
+    //if the source and end are the same, gives the saved result
+    while (!tempRequests.empty()) {
+        pair<int, int> cachedRequest = tempRequests.front();
+        vector<int> cachedResult = tempResults.front();
+        tempRequests.pop();
+        tempResults.pop();
+        
+        if (cachedRequest.first == source && cachedRequest.second == destination) {
+            foundInCache = true;
+            for (int node : cachedResult) {
+                output += to_string(node) + " ";
+            }
+            break;
+        }
+    }
+
+    // If not found in cache, compute the shortest path
+    if (!foundInCache) {
+        shortestPath = bfsShortestPath(graph, source, destination);
+        if (lastRequests.size() >= 10) {
+            lastRequests.pop();
+            lastResults.pop();
+        }
+        lastRequests.push(make_pair(source, destination));
+        lastResults.push(shortestPath);
+        //assembles the message and prints it out
+        if (shortestPath.empty()) {
+            output = "No path found between the two nodes given";
+        } else {
+            for (int node : shortestPath) {
+                output += to_string(node) + " ";
+            }
+        }
+    }
+
+    // Unlock the mutex
+    mtx.unlock();
+
+    // Send the message and close the connection with the client
+    write(client_sockfd, output.c_str(), output.length());
+    close(client_sockfd);
+    return NULL;
+}
+
+
 /*
     use the following commands (in server diractory)
     -   g++ server.cpp
@@ -105,16 +165,16 @@ vector<int> bfsShortestPath(const map<int, vector<int>>& graph, int startNode, i
 */
 
 int main(int argc, char* argv[]){
-
+    // get the file name and the port
     string filename = argv[1];
-    int port = atoi(argv[2]);
+    int port = stoi(argv[2]);
 
+    // initialize the graph
     map<int, vector<int>> graph;
     readCSV(filename, graph);
-    // printGraph(graph);
-    writeAdjacencyListToFile(graph);
 
-    // Creating a TCP server socket to listen for incoming connections
+
+    // Creating a TCP server and a socket to listen for incoming connections
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in serv_addr = {0};
     serv_addr.sin_family = AF_INET;
@@ -124,76 +184,22 @@ int main(int argc, char* argv[]){
 
     listen(fd, 5);
 
-    // Setting up queues for 10 last requests and results
-    queue<pair<int, int>> lastRequests;
-    queue<vector<int>> lastResults;
-
     while (true) {
         // The server waits for a client connection
         sockaddr_in client_addr = {0};
         socklen_t client_len = sizeof(client_addr);
+
         int client_sockfd = accept(fd, (sockaddr*)&client_addr, &client_len);
 
+        // create a new thread that leads to using the handleclient function
+        Threadinfo* info = new Threadinfo{client_sockfd, graph};
+        pthread_t thread;
+        pthread_create(&thread, NULL, handleClient, info);
 
-        // Receiving data from client
-        char buffer[256];
-        memset(buffer, 0, sizeof(buffer));
-        int bytes_received = read(client_sockfd, buffer, sizeof(buffer));
-
-
-        // Split the message to arguments needed for the search
-        string payload(buffer);
-        size_t comma_pos = payload.find(',');
-        int source = stoi(payload.substr(0, comma_pos));
-        int destination = stoi(payload.substr(comma_pos + 1));
-
-        vector<int> shortestPath;
-        bool foundInCache = false;
-        string output;
-
-        // Check if the request is in the cache
-        queue<pair<int, int>> tempRequests = lastRequests;
-        queue<vector<int>> tempResults = lastResults;
-        while (!tempRequests.empty()) {
-            pair<int, int> cachedRequest = tempRequests.front();
-            vector<int> cachedResult = tempResults.front();
-            tempRequests.pop();
-            tempResults.pop();
-
-            if (cachedRequest.first == source && cachedRequest.second == destination) {
-                foundInCache = true;
-                for (int node : cachedResult) {
-                    output += to_string(node) + " ";
-                }
-                output += "88888 "; // Add 88888 to the output if the result was pulled from the cache
-                break;
-            }
-        }
-
-        // If not found in cache, compute the shortest path
-        if (!foundInCache) {
-            shortestPath = bfsShortestPath(graph, source, destination);
-            if (lastRequests.size() >= 10) {
-                lastRequests.pop();
-                lastResults.pop();
-            }
-            lastRequests.push(make_pair(source, destination));
-            lastResults.push(shortestPath);
-
-            if (shortestPath.empty()) {
-                cout << "No path found between nodes " << source << " and " << destination << endl;
-            } else {
-                // Building the message for the client
-                for (int node : shortestPath) {
-                    output += to_string(node) + " ";
-                }
-            }
-        }
-
-        // Send the message and close the connection with the client
-        write(client_sockfd, output.c_str(), output.length());
-        close(client_sockfd);
+        // Detach the thread so it can run independently
+        pthread_detach(thread);
     }
+    // closes the socket
     close(fd);
     return 0;
 }
