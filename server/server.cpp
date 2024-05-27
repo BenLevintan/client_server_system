@@ -11,10 +11,6 @@
 #include "std_lib_facilities.h"
 
 using namespace std;
-struct Threadinfo {
-    int client_sockfd;
-    const map<int, vector<int>>& graph;
-};
 
 // Function to read the CSV file and populate the graph
 void readCSV(const string& filename, map<int, vector<int>>& graph) {
@@ -107,40 +103,6 @@ vector<int> bfsShortestPath(const map<int, vector<int>>& graph, int startNode, i
     -   g++ server.cpp
     -   ./a.out <filename.csv> <port number> 
 */
-//a function that is used each time a new thread is createdw
-
-void* handleClient(void* arg){
-    Threadinfo* info = static_cast<Threadinfo*>(info);
-    int client_sockfd = info->client_sockfd;
-    const map<int, vector<int>>& graph = info->graph;
-    delete info;
-    char buffer[256];
-    memset(buffer,0,sizeof(buffer));
-    int bytes_recieved=read(client_sockfd,buffer,sizeof(buffer));
-    if(bytes_recieved<=0){
-        cerr <<"error while recieving message"<<endl;
-        close(client_sockfd);
-        return nullptr;
-    }
-    string payload(buffer);
-    size_t commaposition=payload.find(',');
-    int source=stoi(payload.substr(0,commaposition));
-    int destination=stoi(payload.substr(commaposition+1));
-    vector<int> bfspath=bfsShortestPath(graph,source,destination);
-    string output;
-    if(bfspath.empty()){
-        output="No path found between the two nodes given";
-    }
-    else{
-        for(int node:bfspath){
-            output+=to_string(node)+" ";
-        }
-    }
-    write(client_sockfd, output.c_str(), output.length());
-    close(client_sockfd);
-    return nullptr;
-}
-
 
 int main(int argc, char* argv[]){
 
@@ -176,17 +138,64 @@ int main(int argc, char* argv[]){
             continue;
         }
 
-        // creating a new thread for each client that connects
-        Threadinfo* info=new Threadinfo{client_sockfd,graph};
-        pthread_t thread;
-        if (pthread_create(&thread, nullptr, handleClient, info) != 0) {
-            cerr << "Error creating thread" << endl;
-            close(client_sockfd);
-            delete info;
-            continue;
-        }   
-        
-        
+        // Receiving data from client
+        char buffer[256];
+        memset(buffer, 0, sizeof(buffer));
+        int bytes_received = read(client_sockfd, buffer, sizeof(buffer));
+
+
+        // Split the message to arguments needed for the search
+        string payload(buffer);
+        size_t comma_pos = payload.find(',');
+        int source = stoi(payload.substr(0, comma_pos));
+        int destination = stoi(payload.substr(comma_pos + 1));
+
+        vector<int> shortestPath;
+        bool foundInCache = false;
+        string output;
+
+        // Check if the request is in the cache
+        queue<pair<int, int>> tempRequests = lastRequests;
+        queue<vector<int>> tempResults = lastResults;
+        while (!tempRequests.empty()) {
+            pair<int, int> cachedRequest = tempRequests.front();
+            vector<int> cachedResult = tempResults.front();
+            tempRequests.pop();
+            tempResults.pop();
+
+            if (cachedRequest.first == source && cachedRequest.second == destination) {
+                foundInCache = true;
+                for (int node : cachedResult) {
+                    output += to_string(node) + " ";
+                }
+            //    output += "88888 "; // Add 88888 to the output if the result was pulled from the cache
+                break;
+            }
+        }
+
+        // If not found in cache, compute the shortest path
+        if (!foundInCache) {
+            shortestPath = bfsShortestPath(graph, source, destination);
+            if (lastRequests.size() >= 10) {
+                lastRequests.pop();
+                lastResults.pop();
+            }
+            lastRequests.push(make_pair(source, destination));
+            lastResults.push(shortestPath);
+
+            if (shortestPath.empty()) {
+                cout << "No path found between nodes " << source << " and " << destination << endl;
+            } else {
+                // Building the message for the client
+                for (int node : shortestPath) {
+                    output += to_string(node) + " ";
+                }
+            }
+        }
+
+        // Send the message and close the connection with the client
+        write(client_sockfd, output.c_str(), output.length());
+        close(client_sockfd);
     }
     close(fd);
     return 0;
