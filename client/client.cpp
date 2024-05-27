@@ -1,3 +1,7 @@
+//Ben Levintan 318181831
+//Omri Buhbut 209379536
+//Or Avital 207779802
+
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -10,11 +14,6 @@
 
 using namespace std;
 
-// Test function for the terminal client input
-void printInput(string ip, int port, int source, int destination) {
-    cout << "IP address: " << ip << "\nPort number: " << port 
-         << "\nSource: " << source << "\nDestination: " << destination << endl;
-}
 
 /*
     Use the following commands (in client diractory)
@@ -25,7 +24,7 @@ void printInput(string ip, int port, int source, int destination) {
 // Following zoom recording of Michael from 19-03
 int main(int argc, char *argv[]) {
     string ip = argv[1];
-    int port = atoi(argv[2]);
+    int port = stoi(argv[2]);
     string source = argv[3];
     string destination = argv[4];
 
