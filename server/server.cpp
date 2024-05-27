@@ -60,7 +60,7 @@ void writeAdjacencyListToFile(const map<int, vector<int>>& adjacencyList) {
     }
 
     outputFile.close();
-    cout << "Adjacency list written to adjacency_list.txt" << endl;
+    cout << "data loaded" << endl;
 }
 
 // Function to perform BFS and find the shortest path between two nodes
@@ -111,7 +111,7 @@ int main(int argc, char* argv[]){
 
     map<int, vector<int>> graph;
     readCSV(filename, graph);
-    printGraph(graph);
+    // printGraph(graph);
     writeAdjacencyListToFile(graph);
 
     // Creating a TCP server socket to listen for incoming connections
