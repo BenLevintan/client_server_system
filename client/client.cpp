@@ -11,7 +11,7 @@
 using namespace std;
 
 // Test function for the terminal client input
-void printInput(const std::string& ip, int port, int source, int destination) {
+void printInput(string ip, int port, int source, int destination) {
     cout << "IP address: " << ip << "\nPort number: " << port 
          << "\nSource: " << source << "\nDestination: " << destination << endl;
 }
